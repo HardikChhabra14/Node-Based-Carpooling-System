@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Driver Dashboard</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        .trip-card { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+        .request-card { background: #e9f5ff; border-left: 5px solid #007bff; padding: 10px; margin: 10px 0; }
+        .btn { background: #007bff; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #0056b3; }
+        .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.8em; }
+        .badge-active { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Driver Dashboard</h1>
+        <p>Welcome, {{ user.username }}! <a href="{% url 'account_logout' %}">Logout</a></p>
+
+        <h2>Active Trips</h2>
+        {% for trip in active_trips %}
+        <div class="trip-card">
+            <h3>Trip #{{ trip.id }} <span class="badge badge-active">{{ trip.status }}</span></h3>
+            <p><strong>Route:</strong> {{ trip.start_node }} &rarr; {{ trip.end_node }}</p>
+            <p><strong>Current Node:</strong> {{ trip.current_node }}</p>
+            
+            <h4>Incoming Carpool Requests</h4>
+            {% if matches %}
+                {% for match in matches %}
+                    {% if match.trip_id == trip.id %}
+                    <div class="request-card">
+                        <p><strong>Passenger:</strong> {{ match.request.passenger.username }}</p>
+                        <p><strong>Pickup:</strong> {{ match.request.pickup_node }} | <strong>Dropoff:</strong> {{ match.request.dropoff_node }}</p>
+                        <p><strong>Detour:</strong> +{{ match.detour }} nodes</p>
+                        <p><strong>Proposed Fare:</strong> ${{ match.fare }}</p>
+                        
+                        <form method="POST" action="{% url 'api-root' %}offers/">
+                            {% csrf_token %}
+                            <input type="hidden" name="trip" value="{{ trip.id }}">
+                            <input type="hidden" name="request" value="{{ match.request.id }}">
+                            <button type="submit" class="btn">Offer to Accept</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <p>No matching requests found.</p>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p>No active trips. <a href="/api/trips/">Publish one via API</a>.</p>
+        {% endfor %}
+
+        <h2>Past Trips</h2>
+        <ul>
+            {% for trip in trips %}
+                {% if trip.status != 'ACTIVE' %}
+                <li>Trip #{{ trip.id }}: {{ trip.start_node }} &rarr; {{ trip.end_node }} ({{ trip.status }})</li>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    </div>
+</body>
+</html>
