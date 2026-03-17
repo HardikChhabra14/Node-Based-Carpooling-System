@@ -8,9 +8,8 @@ Django==6.0.2
 django-allauth==65.14.3
 django-extensions==4.1
 djangorestframework==3.16.1
-gunicorn==25.1.0
 idna==3.11
-packaging==26.0
+oauthlib==3.3.1
 psycopg2-binary==2.9.11
 pycparser==3.0
 PyJWT==2.11.0
