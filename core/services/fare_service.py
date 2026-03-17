@@ -36,5 +36,6 @@ def calculate_trip_fare(current_occupancy_per_hop, route_nodes, pickup_node, dro
         # If current_occupancy_per_hop is not provided, assume 1 (just the new passenger)
         current_n = current_occupancy_per_hop[i] if i < len(current_occupancy_per_hop) else 0
         relevant_occupancy.append(current_n + 1)
-    
+        # Ensure at least 1 passenger (avoid division issues)
+        current_n = max(current_n, 0)
     return calculate_passenger_fare(relevant_occupancy, unit_price, base_fee)

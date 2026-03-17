@@ -36,6 +36,32 @@ class Trip(models.Model):
 
     def __str__(self):
         return f"Trip by {self.driver} from {self.start_node} to {self.end_node}"
+    def get_occupancy_per_hop(self):      
+        route = self.route
+        if not route or len(route) < 2:
+            return []
+    
+        # Initialize all hops with 0 passengers
+        occupancy = [0] * (len(route) - 1)
+    
+        # Get all accepted offers
+        accepted_offers = self.offers.filter(status='ACCEPTED')
+    
+        for offer in accepted_offers:
+            pickup = offer.request.pickup_node.id
+            dropoff = offer.request.dropoff_node.id
+    
+            try:
+                start_idx = route.index(pickup)
+                end_idx = route.index(dropoff)
+            except ValueError:
+                continue
+    
+            # Increase occupancy for each hop the passenger is in
+            for i in range(start_idx, end_idx):
+                occupancy[i] += 1
+    
+        return occupancy
 
 class CarpoolRequest(models.Model):
     STATUS_CHOICES = [

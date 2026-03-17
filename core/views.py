@@ -73,7 +73,14 @@ class TripViewSet(viewsets.ModelViewSet):
                 if new_route:
                     # For fare, we'd need occupancy. For now assume basic.
                     # occupancy = trip.get_occupancy_per_hop(new_route) # TODO
-                    fare = fare_service.calculate_trip_fare([], new_route, req.pickup_node.id, req.dropoff_node.id)
+                    occupancy = trip.get_occupancy_per_hop()
+
+                    fare = fare_service.calculate_trip_fare(
+                        occupancy,
+                        new_route,
+                        req.pickup_node.id,
+                        req.dropoff_node.id
+                    )
                     
                     matches.append({
                         'request': CarpoolRequestSerializer(req).data,
@@ -135,7 +142,14 @@ class OfferViewSet(viewsets.ModelViewSet):
         if not new_route:
             return Response({'error': 'Cannot fulfill request'}, status=status.HTTP_400_BAD_REQUEST)
             
-        fare = fare_service.calculate_trip_fare([], new_route, carpool_req.pickup_node.id, carpool_req.dropoff_node.id)
+        occupancy = trip.get_occupancy_per_hop()
+
+        fare = fare_service.calculate_trip_fare(
+            occupancy,
+            new_route,
+            carpool_req.pickup_node.id,
+            carpool_req.dropoff_node.id
+        )
         accepted_offers = Offer.objects.filter(trip=trip, status='ACCEPTED').count()
 
         if accepted_offers >= trip.max_passengers:
