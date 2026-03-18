@@ -9,7 +9,10 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, authenticate
 from django.contrib.auth.forms import AuthenticationForm
+from django.http import HttpResponse
 
+def home(request):
+    return HttpResponse("🚀 Node-Based Carpooling System is Running!")
 class NodeViewSet(viewsets.ModelViewSet):
     queryset = Node.objects.all()
     serializer_class = NodeSerializer
@@ -95,13 +98,13 @@ class CarpoolRequestViewSet(viewsets.ModelViewSet):
     serializer_class = CarpoolRequestSerializer
 
     def perform_create(self, serializer):
-    pickup = serializer.validated_data['pickup_node']
-    dropoff = serializer.validated_data['dropoff_node']
+        pickup = serializer.validated_data['pickup_node']
+        dropoff = serializer.validated_data['dropoff_node']
+    
+        if pickup == dropoff:
+            raise serializers.ValidationError("Pickup and dropoff cannot be the same.")
 
-    if pickup == dropoff:
-        raise serializers.ValidationError("Pickup and dropoff cannot be the same.")
-
-    serializer.save(passenger=self.request.user)
+        serializer.save(passenger=self.request.user)
 
     @decorators.action(detail=True, methods=['get'])
     def offers(self, request, pk=None):
