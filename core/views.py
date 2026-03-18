@@ -9,7 +9,10 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, authenticate
 from django.contrib.auth.forms import AuthenticationForm
+from django.http import HttpResponse
 
+def home(request):
+    return HttpResponse("🚀 Node-Based Carpooling System is Running!")
 class NodeViewSet(viewsets.ModelViewSet):
     queryset = Node.objects.all()
     serializer_class = NodeSerializer
@@ -50,6 +53,8 @@ class TripViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=['get'])
     def matching_requests(self, request, pk=None):
         trip = self.get_object()
+        if trip.status != 'ACTIVE':
+            return Response({'error': 'Trip is not active'}, status=status.HTTP_400_BAD_REQUEST)
         # Remaining route: nodes from current_node onwards
         try:
             curr_idx = trip.route.index(trip.current_node.id)
@@ -71,7 +76,14 @@ class TripViewSet(viewsets.ModelViewSet):
                 if new_route:
                     # For fare, we'd need occupancy. For now assume basic.
                     # occupancy = trip.get_occupancy_per_hop(new_route) # TODO
-                    fare = fare_service.calculate_trip_fare([], new_route, req.pickup_node.id, req.dropoff_node.id)
+                    occupancy = trip.get_occupancy_per_hop()
+
+                    fare = fare_service.calculate_trip_fare(
+                        occupancy,
+                        new_route,
+                        req.pickup_node.id,
+                        req.dropoff_node.id
+                    )
                     
                     matches.append({
                         'request': CarpoolRequestSerializer(req).data,
@@ -86,6 +98,12 @@ class CarpoolRequestViewSet(viewsets.ModelViewSet):
     serializer_class = CarpoolRequestSerializer
 
     def perform_create(self, serializer):
+        pickup = serializer.validated_data['pickup_node']
+        dropoff = serializer.validated_data['dropoff_node']
+    
+        if pickup == dropoff:
+            raise serializers.ValidationError("Pickup and dropoff cannot be the same.")
+
         serializer.save(passenger=self.request.user)
 
     @decorators.action(detail=True, methods=['get'])
@@ -105,7 +123,19 @@ class OfferViewSet(viewsets.ModelViewSet):
         
         trip = get_object_or_404(Trip, id=trip_id, driver=request.user)
         carpool_req = get_object_or_404(CarpoolRequest, id=request_id)
-        
+        existing_offer = Offer.objects.filter(trip=trip, request=carpool_req).exists()
+
+        if existing_offer:
+
+            return Response(
+                {'error': 'Offer already exists for this request'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if carpool_req.passenger == request.user:
+            return Response(
+                {'error': 'Cannot accept your own request'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         # Calculate detour and fare again for confirmation
         # (Usually you'd pass these from the matching_requests endpoint for consistency)
         curr_idx = trip.route.index(trip.current_node.id)
@@ -115,8 +145,21 @@ class OfferViewSet(viewsets.ModelViewSet):
         if not new_route:
             return Response({'error': 'Cannot fulfill request'}, status=status.HTTP_400_BAD_REQUEST)
             
-        fare = fare_service.calculate_trip_fare([], new_route, carpool_req.pickup_node.id, carpool_req.dropoff_node.id)
-        
+        occupancy = trip.get_occupancy_per_hop()
+
+        fare = fare_service.calculate_trip_fare(
+            occupancy,
+            new_route,
+            carpool_req.pickup_node.id,
+            carpool_req.dropoff_node.id
+        )
+        accepted_offers = Offer.objects.filter(trip=trip, status='ACCEPTED').count()
+
+        if accepted_offers >= trip.max_passengers:
+            return Response(
+                {'error': 'Trip is full'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         offer = Offer.objects.create(
             trip=trip,
             request=carpool_req,
@@ -128,13 +171,15 @@ class OfferViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=['post'])
     def accept(self, request, pk=None):
         offer = self.get_object()
+        
         if offer.request.passenger != request.user:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
             
         # Accept offer: update statuses and trip route
         offer.status = 'ACCEPTED'
         offer.save()
-        
+        if offer.status == 'ACCEPTED':
+            return Response({'error': 'Offer already accepted'}, status=status.HTTP_400_BAD_REQUEST)
         carpool_req = offer.request
         carpool_req.status = 'ACCEPTED'
         carpool_req.save()
@@ -152,7 +197,8 @@ class OfferViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['post'])
     def complete_trip(self, request, pk=None):
-        trip = self.get_object()
+        offer = self.get_object()
+        trip = offer.trip
         if trip.driver != request.user:
             return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
             
@@ -174,11 +220,16 @@ class OfferViewSet(viewsets.ModelViewSet):
                                     status=status.HTTP_400_BAD_REQUEST)
                 
                 # Transfer funds
-                passenger_wallet.balance -= offer.fare
+                from django.db.models import F
+
+                passenger_wallet.balance = F('balance') - offer.fare
                 passenger_wallet.save()
-                
-                driver_wallet.balance += offer.fare
+
+                driver_wallet.balance = F('balance') + offer.fare
                 driver_wallet.save()
+
+                passenger_wallet.refresh_from_db()
+                driver_wallet.refresh_from_db()
                 
                 # Record transactions
                 Transaction.objects.create(
@@ -248,7 +299,7 @@ def driver_dashboard(request):
             curr_idx = trip.route.index(trip.current_node.id)
             remaining_route = trip.route[curr_idx:]
         except (ValueError, AttributeError):
-            remaining_route = trip.route
+            return Response({'error': 'Invalid current node'}, status=status.HTTP_400_BAD_REQUEST)
             
         pending_requests = CarpoolRequest.objects.filter(status='PENDING')
         for req in pending_requests:

@@ -1,40 +1,33 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  db:
-    image: postgres:15
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_DB=carpooling
-      - POSTGRES_USER=carpooling_user
-      - POSTGRES_PASSWORD=carpooling_pass
-    expose:
-      - "5432"
-
   web:
     build: .
-    command: gunicorn --bind 0.0.0.0:8000 carpooling.wsgi:application
+    command: gunicorn carpooling.wsgi:application --bind 0.0.0.0:8000
     volumes:
       - .:/app
-    environment:
-      - DEBUG=0
-      - SECRET_KEY=your_secret_key_here
-      - DATABASE_URL=postgres://carpooling_user:carpooling_pass@db:5432/carpooling
+    ports:
+      - "8000:8000"
     depends_on:
       - db
-    expose:
-      - "8000"
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: carpool_db
+      POSTGRES_USER: carpool_user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
 
   nginx:
     image: nginx:latest
     ports:
       - "80:80"
     volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./static:/app/static
+      - ./nginx:/etc/nginx/conf.d
     depends_on:
       - web
-
 volumes:
   postgres_data:
